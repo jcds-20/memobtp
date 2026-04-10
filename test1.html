@@ -3,14 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+ <link rel="icon" type="image/png" href="logo.png" />
   <title>MemoBTP – Mémoires techniques pour appels d'offres BTP générés par l'IA</title>
   <meta name="description" content="MemoBTP génère automatiquement vos mémoires techniques pour répondre aux appels d'offres publics. Gagnez du temps et remportez plus de marchés." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300;12..96,400;12..96,500;12..96,700;12..96,800&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet" />
-  <!-- Favicon -->
-  <link rel="icon" type="image/png" href="logo.png" />
-  <link rel="shortcut icon" href="logo.png" />
+
   <style>
     /* ─────────────────────────────── RESET & VARS ── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -628,24 +627,6 @@
           </select>
         </div>
 
-        <!-- Honeypot anti-bot : champ invisible, ne jamais remplir -->
-        <div style="position:absolute;left:-9999px;top:-9999px;visibility:hidden;pointer-events:none;" aria-hidden="true">
-          <label for="website">Ne pas remplir</label>
-          <input type="text" id="website" name="website" tabindex="-1" autocomplete="off" />
-        </div>
-
-        <!-- Cloudflare Turnstile widget -->
-        <div style="margin-bottom:16px;">
-          <div id="turnstile-widget"
-               class="cf-turnstile"
-               data-sitekey="0x4AAAAAAC6rJapasL-dAhcj"
-               data-theme="light"
-               data-callback="onTurnstileSuccess"
-               data-error-callback="onTurnstileError"
-               data-expired-callback="onTurnstileExpired">
-          </div>
-        </div>
-
         <div class="form-error-msg" id="form-error"></div>
 
         <button class="form-submit-btn" id="submit-btn" onclick="submitInscription()">
@@ -672,230 +653,100 @@
     <div class="footer-right">
       <a href="#">Mentions légales</a>
       <a href="#">Politique de confidentialité</a>
-      <a href="/cdn-cgi/l/email-protection#adcec2c3d9ccced9edc0c8c0c2cfd9dd83cbdf">Contact</a>
+      <a href="mailto:contact@memobtp.fr">Contact</a>
     </div>
   </div>
 </footer>
 
 <!-- ═══════════════════════ SCRIPTS ═══════════════════════ -->
-<!--
-  Turnstile chargé ICI (avant </body>, sans async/defer) :
-  garantit que le widget est rendu avant que l'utilisateur
-  puisse soumettre le formulaire.
--->
-<script src="https://challenges.cloudflare.com/turnstile/v0/api.js"></script>
-
 <script>
-  /* ─────────────────────────────────────────────────────────
-   * État Turnstile
-   * widgetId  : retourné par turnstile.render() — utilisé pour reset ciblé
-   * captchaOk : true dès que le callback de succès est appelé
-   * ───────────────────────────────────────────────────────── */
-  var _turnstileWidgetId = null;
-  var _captchaOk        = false;
+  /* ── Supabase config ── */
+  const SUPABASE_URL = 'https://qrzyksoyawzuxffnhtnn.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable_Tflg6AlqcbEkxAZGKPIM2g_NJfPGPce';
 
-  // Callback appelé par Turnstile quand l'utilisateur est validé
-  function onTurnstileSuccess(token) {
-    _captchaOk = true;
-    // Effacer un éventuel message d'erreur captcha résiduel
-    var errBox = document.getElementById('form-error');
-    if (errBox && errBox.dataset.captchaErr === '1') {
-      errBox.style.display   = 'none';
-      errBox.dataset.captchaErr = '';
+  async function insertProspect(data) {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/prospects`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+        'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || `Erreur serveur (${res.status})`);
     }
+    return true;
   }
 
-  // Callback erreur Turnstile (réseau, clé invalide…)
-  function onTurnstileError() {
-    _captchaOk = false;
-  }
-
-  // Callback expiration du token (>5 min sans submit)
-  function onTurnstileExpired() {
-    _captchaOk = false;
-  }
-
-  /* ─────────────────────────────────────────────────────────
-   * heroEmailSubmit
-   * Pré-remplit l'email et scroll vers le formulaire principal
-   * ───────────────────────────────────────────────────────── */
+  /* ── Hero quick-email form ── */
   function heroEmailSubmit(e) {
     e.preventDefault();
-    var email = document.getElementById('hero-email').value.trim();
+    const email = document.getElementById('hero-email').value.trim();
     if (!email) return;
+    // Pre-fill the main form and scroll to it
     document.getElementById('f-email').value = email;
     document.getElementById('inscription').scrollIntoView({ behavior: 'smooth' });
-    setTimeout(function () { document.getElementById('f-nom').focus(); }, 600);
+    setTimeout(() => document.getElementById('f-nom').focus(), 600);
   }
 
-  /* ─────────────────────────────────────────────────────────
-   * submitInscription
-   *   1. Honeypot check
-   *   2. Validation des champs
-   *   3. Vérification captcha Turnstile
-   *   4. POST /api/prospects avec captchaToken
-   *   5. UX : loading → success | error + reset captcha
-   * ───────────────────────────────────────────────────────── */
+  /* ── Main inscription form ── */
   async function submitInscription() {
+    const nom        = document.getElementById('f-nom').value.trim();
+    const entreprise = document.getElementById('f-entreprise').value.trim();
+    const email      = document.getElementById('f-email').value.trim();
+    const nb_employes = document.getElementById('f-employes').value;
 
-    // ── 1. Honeypot : abandon silencieux si champ caché rempli
-    if (document.getElementById('website').value !== '') return;
-
-    // ── 2. Lecture des champs
-    var nom         = document.getElementById('f-nom').value.trim();
-    var entreprise  = document.getElementById('f-entreprise').value.trim();
-    var email       = document.getElementById('f-email').value.trim();
-    var nb_employes = document.getElementById('f-employes').value;
-
-    // ── 3. Reset erreurs visuelles
-    ['f-nom', 'f-entreprise', 'f-email', 'f-employes'].forEach(function (id) {
+    // Reset errors
+    ['f-nom','f-entreprise','f-email','f-employes'].forEach(id => {
       document.getElementById(id).classList.remove('error');
     });
-    var errBox = document.getElementById('form-error');
-    errBox.style.display      = 'none';
-    errBox.dataset.captchaErr = '';
+    const errBox = document.getElementById('form-error');
+    errBox.style.display = 'none';
 
-    // ── 4. Validation champs obligatoires
-    var hasError = false;
-    var missing  = [];
-    if (!nom)       { document.getElementById('f-nom').classList.add('error');        missing.push('nom');               hasError = true; }
-    if (!entreprise){ document.getElementById('f-entreprise').classList.add('error'); missing.push('entreprise');        hasError = true; }
+    // Validate
+    let hasError = false;
+    const missing = [];
+    if (!nom)        { document.getElementById('f-nom').classList.add('error');        missing.push('nom'); hasError = true; }
+    if (!entreprise) { document.getElementById('f-entreprise').classList.add('error'); missing.push('entreprise'); hasError = true; }
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-                      document.getElementById('f-email').classList.add('error');      missing.push('email valide');      hasError = true; }
-    if (!nb_employes){ document.getElementById('f-employes').classList.add('error');  missing.push("nombre d'employés"); hasError = true; }
+      document.getElementById('f-email').classList.add('error'); missing.push('email valide'); hasError = true;
+    }
+    if (!nb_employes) { document.getElementById('f-employes').classList.add('error'); missing.push('nombre d\'employés'); hasError = true; }
 
     if (hasError) {
-      errBox.textContent   = 'Merci de renseigner : ' + missing.join(', ') + '.';
+      errBox.textContent = `Merci de renseigner : ${missing.join(', ')}.`;
       errBox.style.display = 'block';
       return;
     }
 
-    // ── 5. Vérification Turnstile
-    // getResponse() retourne le token si validé, chaîne vide sinon — API officielle Cloudflare
-    var captchaToken = (window.turnstile && _turnstileWidgetId !== null)
-      ? window.turnstile.getResponse(_turnstileWidgetId)
-      : '';
-
-    // Fallback : lecture directe du hidden input injecté par Turnstile
-    if (!captchaToken) {
-      var hiddenInput = document.querySelector('#turnstile-widget [name="cf-turnstile-response"]');
-      captchaToken = hiddenInput ? hiddenInput.value : '';
-    }
-
-    if (!captchaToken) {
-      errBox.textContent        = 'Veuillez compléter la vérification de sécurité avant d\'envoyer.';
-      errBox.style.display      = 'block';
-      errBox.dataset.captchaErr = '1';
-      return;
-    }
-
-    // ── 6. Loading state
-    var btn = document.getElementById('submit-btn');
-    document.getElementById('btn-label').style.display   = 'none';
+    // UI: loading state
+    const btn = document.getElementById('submit-btn');
+    document.getElementById('btn-label').style.display = 'none';
     document.getElementById('btn-spinner').style.display = 'block';
     btn.disabled = true;
 
-    // ── 7. POST vers la Vercel function (clé Supabase jamais côté client)
     try {
-      var res = await fetch('/api/prospects', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
-          nom:          nom,
-          entreprise:   entreprise,
-          email:        email,
-          nb_employes:  nb_employes,
-          captchaToken: captchaToken
-        })
-      });
-
-      if (!res.ok) {
-        var payload = await res.json().catch(function () { return {}; });
-        throw new Error(payload.message || ('Erreur serveur (' + res.status + ')'));
-      }
-
-      // ── 8. Success
-      document.getElementById('form-body').style.display    = 'none';
+      await insertProspect({ nom, entreprise, email, nb_employes });
+      document.getElementById('form-body').style.display = 'none';
       document.getElementById('form-success').style.display = 'block';
-
     } catch (err) {
-      errBox.textContent   = 'Une erreur est survenue : ' + err.message + '. Veuillez réessayer ou nous contacter à contact@memobtp.fr';
+      errBox.textContent = `Une erreur est survenue : ${err.message}. `;
       errBox.style.display = 'block';
-      document.getElementById('btn-label').style.display   = 'block';
-      document.getElementById('btn-spinner').style.display  = 'none';
+      document.getElementById('btn-label').style.display = 'block';
+      document.getElementById('btn-spinner').style.display = 'none';
       btn.disabled = false;
-
-      // Reset Turnstile ciblé (widgetId) pour permettre une nouvelle tentative
-      _captchaOk = false;
-      if (window.turnstile) {
-        if (_turnstileWidgetId !== null) {
-          window.turnstile.reset(_turnstileWidgetId);
-        } else {
-          window.turnstile.reset();
-        }
-      }
     }
   }
 
-  /* ─────────────────────────────────────────────────────────
-   * Initialisation au chargement DOM
-   *  - Rend les fonctions accessibles globalement (fix "is not defined")
-   *  - Remplace onclick par addEventListener (compatible CSP Vercel)
-   *  - Rend le widget Turnstile de façon explicite pour capturer widgetId
-   *  - Lance le scroll reveal
-   * ───────────────────────────────────────────────────────── */
-  document.addEventListener('DOMContentLoaded', function () {
-
-    // Exposition globale des fonctions (sécurité CSP sur Vercel)
-    window.heroEmailSubmit    = heroEmailSubmit;
-    window.submitInscription  = submitInscription;
-    window.onTurnstileSuccess = onTurnstileSuccess;
-    window.onTurnstileError   = onTurnstileError;
-    window.onTurnstileExpired = onTurnstileExpired;
-
-    // Remplace le onclick inline par un addEventListener robuste
-    var submitBtn = document.getElementById('submit-btn');
-    if (submitBtn) {
-      submitBtn.removeAttribute('onclick');
-      submitBtn.addEventListener('click', function (e) {
-        e.preventDefault();
-        submitInscription();
-      });
-    }
-
-    // Remplace le onsubmit inline du hero form
-    var heroForm = document.querySelector('.hero-form');
-    if (heroForm) {
-      heroForm.removeAttribute('onsubmit');
-      heroForm.addEventListener('submit', heroEmailSubmit);
-    }
-
-    // Rendu explicite du widget Turnstile pour capturer le widgetId
-    // (nécessaire pour getResponse(id) et reset(id))
-    var widgetEl = document.getElementById('turnstile-widget');
-    if (widgetEl && window.turnstile) {
-      // Retirer les data-* pour éviter le double-rendu automatique
-      widgetEl.classList.remove('cf-turnstile');
-      _turnstileWidgetId = window.turnstile.render(widgetEl, {
-        sitekey:          '0x4AAAAAAC6rJapasL-dAhcj',
-        theme:            'light',
-        callback:         onTurnstileSuccess,
-        'error-callback': onTurnstileError,
-        'expired-callback': onTurnstileExpired
-      });
-    }
-
-    // Scroll reveal
-    var revealObserver = new IntersectionObserver(function (entries) {
-      entries.forEach(function (e) {
-        if (e.isIntersecting) e.target.classList.add('visible');
-      });
-    }, { threshold: 0.12 });
-    document.querySelectorAll('.reveal').forEach(function (el) {
-      revealObserver.observe(el);
-    });
-
-  });
+  /* ── Scroll reveal ── */
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
+  }, { threshold: 0.12 });
+  document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
 </script>
 </body>
 </html>
