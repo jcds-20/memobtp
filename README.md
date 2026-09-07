@@ -51,7 +51,7 @@ Ce projet est un **MVP (Minimum Viable Product)** visant à :
 
 ## 🛠️ Stack technique
 
-- Frontend : HTML / CSS / (Next.js possible)
+- Frontend : Next.js (App Router) / TypeScript / Tailwind CSS
 - Backend : Supabase
 - Hosting : Vercel
 - Auth / DB : Supabase PostgreSQL
